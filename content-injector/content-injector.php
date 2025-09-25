@@ -72,10 +72,12 @@ function ci_render_shortcode_slot_field($args) {
     $enabled = isset($options["slot_{$slot_number}_enabled"]) ? $options["slot_{$slot_number}_enabled"] : 0;
     $shortcode = isset($options["slot_{$slot_number}_shortcode"]) ? $options["slot_{$slot_number}_shortcode"] : '';
     $location = isset($options["slot_{$slot_number}_location"]) ? $options["slot_{$slot_number}_location"] : 'disabled';
+    $selected_cats = isset($options["slot_{$slot_number}_categories"]) ? $options["slot_{$slot_number}_categories"] : [];
 
     ci_render_location_dropdown($location, "ci_settings[slot_{$slot_number}_location]");
     echo '<div><label><input type="checkbox" name="ci_settings[slot_' . $slot_number . '_enabled]" value="1" ' . checked(1, $enabled, false) . '> Enable this shortcode slot</label></div>';
     echo '<div style="margin-top: 10px;"><label>Shortcode:</label><br><input type="text" name="ci_settings[slot_' . $slot_number . '_shortcode]" value="' . esc_attr($shortcode) . '" class="regular-text" placeholder="[your_shortcode_here]"></div>';
+    ci_render_category_checkboxes($selected_cats, "ci_settings[slot_{$slot_number}_categories]");
 }
 
 // 3c. Render the HTML for each AD slot
@@ -89,6 +91,7 @@ function ci_render_ad_slot_field($args) {
     $image_url = isset($options["ad_slot_{$slot_number}_image_url"]) ? $options["ad_slot_{$slot_number}_image_url"] : '';
     $dest_url = isset($options["ad_slot_{$slot_number}_dest_url"]) ? $options["ad_slot_{$slot_number}_dest_url"] : '';
     $location = isset($options["ad_slot_{$slot_number}_location"]) ? $options["ad_slot_{$slot_number}_location"] : 'disabled';
+    $selected_cats = isset($options["ad_slot_{$slot_number}_categories"]) ? $options["ad_slot_{$slot_number}_categories"] : [];
 
     ci_render_location_dropdown($location, "ci_settings[ad_slot_{$slot_number}_location]");
     echo '<div><label><input type="checkbox" name="ci_settings[ad_slot_' . $slot_number . '_enabled]" value="1" ' . checked(1, $enabled, false) . '> Enable this ad slot</label></div>';
@@ -96,6 +99,7 @@ function ci_render_ad_slot_field($args) {
     echo '<input type="text" name="ci_settings[ad_slot_' . $slot_number . '_image_url]" value="' . esc_attr($image_url) . '" class="regular-text ci-image-url-field" placeholder="https://example.com/ad.jpg">';
     echo ' <button type="button" class="button ci-upload-btn">Upload Image</button></div>';
     echo '<div style="margin-top: 10px;"><label>Destination URL:</label><br><input type="url" name="ci_settings[ad_slot_' . $slot_number . '_dest_url]" value="' . esc_attr($dest_url) . '" class="regular-text" placeholder="https://sponsor.com/product"></div>';
+    ci_render_category_checkboxes($selected_cats, "ci_settings[ad_slot_{$slot_number}_categories]");
 }
 
 // 3d. Reusable function for the location dropdown
@@ -109,6 +113,26 @@ function ci_render_location_dropdown($current_location, $name) {
         echo '<option value="' . esc_attr($value) . '" ' . selected($current_location, $value, false) . '>' . esc_html($label) . '</option>';
     }
     echo '</select></div>';
+}
+
+// 3e. Reusable function for category checkboxes
+function ci_render_category_checkboxes($selected_cats, $name_prefix) {
+    $categories = get_categories(['hide_empty' => 0]);
+    $selected_cats = is_array($selected_cats) ? $selected_cats : [];
+
+    echo '<div style="margin-top: 10px; max-height: 150px; overflow-y: auto; border: 1px solid #ccd0d4; padding: 5px;">';
+    echo '<strong>Show on Categories:</strong><br>';
+    echo '<p class="description">If no categories are selected, it will show on all posts.</p>';
+
+    foreach ($categories as $category) {
+        $field_name = esc_attr($name_prefix) . '[' . esc_attr($category->term_id) . ']';
+        $checked = in_array($category->term_id, $selected_cats);
+        echo '<label style="display: block; margin-bottom: 5px;">';
+        echo '<input type="checkbox" name="' . $field_name . '" value="' . esc_attr($category->term_id) . '" ' . checked($checked, true, false) . '> ';
+        echo esc_html($category->name);
+        echo '</label>';
+    }
+    echo '</div>';
 }
 
 // NEW. Sanitize and validate all settings.
@@ -135,6 +159,13 @@ function ci_sanitize_settings($input) {
         // A simple sanitize_text_field is a good starting point. For more complex shortcodes, this might need adjustment.
         $new_input["slot_{$i}_shortcode"] = isset($input["slot_{$i}_shortcode"]) ? sanitize_text_field($input["slot_{$i}_shortcode"]) : '';
 
+        // Sanitize category selections for shortcode slots
+        if (!empty($input["slot_{$i}_categories"]) && is_array($input["slot_{$i}_categories"])) {
+            $new_input["slot_{$i}_categories"] = array_map('absint', array_keys($input["slot_{$i}_categories"]));
+        } else {
+            $new_input["slot_{$i}_categories"] = [];
+        }
+
         // Ad slots
         $new_input["ad_slot_{$i}_enabled"] = isset($input["ad_slot_{$i}_enabled"]) ? 1 : 0;
         if (isset($input["ad_slot_{$i}_location"]) && array_key_exists($input["ad_slot_{$i}_location"], $locations)) {
@@ -144,6 +175,13 @@ function ci_sanitize_settings($input) {
         }
         $new_input["ad_slot_{$i}_image_url"] = isset($input["ad_slot_{$i}_image_url"]) ? esc_url_raw($input["ad_slot_{$i}_image_url"]) : '';
         $new_input["ad_slot_{$i}_dest_url"] = isset($input["ad_slot_{$i}_dest_url"]) ? esc_url_raw($input["ad_slot_{$i}_dest_url"]) : '';
+
+        // Sanitize category selections for ad slots
+        if (!empty($input["ad_slot_{$i}_categories"]) && is_array($input["ad_slot_{$i}_categories"])) {
+            $new_input["ad_slot_{$i}_categories"] = array_map('absint', array_keys($input["ad_slot_{$i}_categories"]));
+        } else {
+            $new_input["ad_slot_{$i}_categories"] = [];
+        }
     }
 
     return $new_input;
@@ -216,13 +254,19 @@ function ci_inject_content($content) {
     $injections = [];
 
     for ($i = 1; $i <= CI_TOTAL_SLOTS; $i++) {
-        if (!empty($options["slot_{$i}_enabled"]) && !empty($options["slot_{$i}_shortcode"]) && $options["slot_{$i}_location"] !== 'disabled') {
+        $selected_cats = isset($options["slot_{$i}_categories"]) ? $options["slot_{$i}_categories"] : [];
+        $is_category_match = empty($selected_cats) || has_category($selected_cats);
+
+        if ($is_category_match && !empty($options["slot_{$i}_enabled"]) && !empty($options["slot_{$i}_shortcode"]) && $options["slot_{$i}_location"] !== 'disabled') {
             $injections[] = ['html' => do_shortcode($options["slot_{$i}_shortcode"]), 'location' => $options["slot_{$i}_location"]];
         }
     }
 
     for ($i = 1; $i <= CI_TOTAL_SLOTS; $i++) {
-        if (!empty($options["ad_slot_{$i}_enabled"]) && !empty($options["ad_slot_{$i}_image_url"]) && !empty($options["ad_slot_{$i}_dest_url"]) && $options["ad_slot_{$i}_location"] !== 'disabled') {
+        $selected_cats = isset($options["ad_slot_{$i}_categories"]) ? $options["ad_slot_{$i}_categories"] : [];
+        $is_category_match = empty($selected_cats) || has_category($selected_cats);
+
+        if ($is_category_match && !empty($options["ad_slot_{$i}_enabled"]) && !empty($options["ad_slot_{$i}_image_url"]) && !empty($options["ad_slot_{$i}_dest_url"]) && $options["ad_slot_{$i}_location"] !== 'disabled') {
             $image_url = esc_url($options["ad_slot_{$i}_image_url"]);
             $dest_url = esc_url($options["ad_slot_{$i}_dest_url"]);
             $ad_html = '<div class="ci-ad-wrapper" style="margin: 20px 0; text-align: center;"><a href="' . $dest_url . '" target="_blank" rel="nofollow sponsored"><img src="' . $image_url . '" alt="Advertisement" style="max-width:100%; height:auto; border:0;" /></a></div>';
